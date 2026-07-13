@@ -1,0 +1,24 @@
+# 虚拟环境
+venv/
+
+# 环境变量与key
+.env
+
+# Python 运行时缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 项目生成的修复产物
+fixed_output/
+
+# 编译时的临时文件
+*.out
+*.o
+*.exe
+
+# VS Code 本地配置
+.vscode/
+
+# macOS 系统文件
+.DS_Store
