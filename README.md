@@ -12,10 +12,10 @@
 注意：本项目不支持 Windows 原生 MinGW 环境，请使用 WSL2或原生Linux。
 
 -安装WSL2（Windows用户）
--进入WSL，安装g++	sudo apt update && sudo apt install g++ -y
--安装Python pip	sudo apt install python3-pip -y
+-进入WSL，安装g++
+-安装Python pip
 -克隆/上传项目到 /home/你的名字/
--安装Python依赖	pip install openai python-dotenv
+-安装Python依赖
 -安装 colorama
 -配置 .env
 
