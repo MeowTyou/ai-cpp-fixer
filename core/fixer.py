@@ -55,10 +55,12 @@ def fix_file(file_path: str):
 
     first = compile_and_run(current_code)
     if first["ok"]:
-        print("程序运行正常，无需修复")
-        return
-    current_log = first["log"]
-    error_history.append(f"首次运行报错:\n{current_log}")
+        print("ASan未检测到错误，正交由AI检查")
+        current_log = "代码运行正常，但需要检查所有数组索引访问，确保没有越界风险。"
+        error_history.append(f"安全审查请求:\n{current_log}")
+    else:
+        current_log = first["log"]
+        error_history.append(f"首次运行报错:\n{current_log}")
 
     for attempt in range(1, 4):
         print(f"\n第 {attempt} 次尝试修复...")
@@ -78,11 +80,16 @@ def fix_file(file_path: str):
             "code": "修复后的完整 C++ 代码（不包含任何额外解释）"
         }}
 
-        重要规则：
+        重要规则（必须严格遵守）：
         1. 只输出 JSON，不要包含其他任何文字。
         2. code 字段的值必须是完整的、可编译的 C++ 源代码。
-        3. 如果代码中包含双引号或反斜杠，请正确转义（例如 \\\" 和 \\\\）。
+        3. 如果代码中包含双引号或反斜杠，请正确转义（例如 \" 和 \\）。
         4. 不要使用 Markdown 代码块包裹 JSON。
+        5. 对于任何数组访问（无论是 C 风格栈数组还是 std::vector），请检查所有索引访问是否越界：
+            - 如果索引是常量（如 a[100]），直接修正为合法值（如 a[0]）。
+            - 如果索引是变量（如 a[i]），请检查是否有边界校验（如 if (i < 5)），若没有则添加。
+            - 如果数组大小由变量决定（如 int arr[n]），请改用 std::vector<int> arr(n)。
+        6. 请保留 C 风格栈数组（如 int a[5]），除非数组大小是变量，才需要改为 std::vector。 
         """
 
         try:

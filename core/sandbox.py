@@ -11,7 +11,7 @@ def compile_and_run(source_code: str, timeout_sec: int = 2):
             f.write(source_code)    #写入源代码
 
         comp = subprocess.run(
-            ["g++", "-std=c++17", "-fsanitize=address", "-g", cpp_path, "-o", out_path],    
+            ["g++", "-std=c++17", "-fsanitize=address", "-g", "-Wall", cpp_path, "-o", out_path],    
             #创建g++子进程，将输出赋给comp
             #comp.returncode    子进程退出码 0编译成功 非0编译失败
             #comp.stdout    标准输出 正常编译时通常为空
@@ -22,6 +22,13 @@ def compile_and_run(source_code: str, timeout_sec: int = 2):
 
         if comp.returncode != 0:
             return {"ok": False, "log": comp.stderr}
+
+        if "-Warray-bounds" in comp.stderr or "array subscript" in comp.stderr:     #如果检测到编译器警告和错误
+            return {
+                "ok": False,
+                "log": comp.stderr,
+                "warning_type": "compiler_warning"
+            }
 
         try:
             run = subprocess.run(
