@@ -28,8 +28,3 @@ source venv/bin/activate
 
 输入python main.py 你的文件名.cpp进行修复
 
-
-
-注意：
-ASan对越界检测设置红线有限，当超过红线过多时将无法被检测到。
-例如对于int a[5]; a[100] = 0; 这样的代码，工具会返回 {"ok": True, "log": ""} 完全漏报。
