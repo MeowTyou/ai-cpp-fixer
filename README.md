@@ -24,7 +24,7 @@
 wsl
 cd ~/ai-cpp-fixer
 source venv/bin/activate
-进行准备
 
-输入python main.py 你的文件名.cpp进行修复
+
+
 
