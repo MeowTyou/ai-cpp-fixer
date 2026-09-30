@@ -6,8 +6,7 @@ import json
 from core.sandbox import compile_and_run
 import colorama
 from colorama import Fore, Style
-import difflib
-from core.patch_engine import print_diff, apply_patch_with_rollback
+from core.patch_engine import print_diff, build_patch, apply_patch_with_rollback
 from core.editor import apply_changes
 
 # 初始化 colorama，确保跨平台颜色输出
@@ -398,17 +397,8 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
 
             elif apply_mode == "patch":
                 # 生成补丁文件
-                # 该函数比较两个文本序列（行列表），生成标准 diff 格式的输出
-                diff = difflib.unified_diff(
-                    original.splitlines(keepends=True),
-                    fixed_code.splitlines(keepends=True),
-                    #.splitlines(keepends=True) 按换行符拆分成列表，并保留每行的换行符（\n）
-                    fromfile=file_path,
-                    tofile=file_path
-                    # 两者路径相同，表示这是一个就地修改的补丁
-                )
-                patch_content = ''.join(diff)
-                #将diff中内容按照''分割储存
+                # 统一处理末尾没有换行符的源码，避免生成无法手动应用的补丁。
+                patch_content = build_patch(original, fixed_code, file_path)
                 patch_path = file_path + ".patch"
                 with open(patch_path, "w") as f:
                     f.write(patch_content)
@@ -420,7 +410,10 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
                 #--apply   → apply_mode == "prompt"  → interactive = True  → 需要询问用户
                 #--yes     → apply_mode == "apply"   → interactive = False → 直接执行
                 interactive = (apply_mode == "prompt")
-                success = apply_patch_with_rollback(file_path, fixed_code, interactive=interactive)
+                # 传入 AI 开始处理时的版本；源文件若在等待期间变化，写回时必须拒绝覆盖。
+                success = apply_patch_with_rollback(
+                    file_path, fixed_code, expected_code=original, interactive=interactive
+                )
                 if success == True:
                     print("文件已更新。")
                 elif success == "cancelled":
