@@ -12,61 +12,64 @@ from core.editor import apply_changes
 # 初始化 colorama，确保跨平台颜色输出
 colorama.init()
 
-#防止ai在回复里偏离预定格式
+# 防止 AI 在回复里偏离预定格式，先统一解析，再检查各模式需要的字段。
+def parse_json_object(raw: str):
+    """解析标准 JSON 或 Markdown 中的 JSON，只接受最外层为对象的回复。"""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    # 第一层：假设 AI 回答严格按照格式，尝试标准 JSON 解析。
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # 第二层：允许 JSON 被包在 Markdown 代码块里，但仍须解析和校验类型。
+        match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
+        if not match:
+            return None
+        try:
+            data = json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            return None
+
+    # 合法 JSON 也可能是数组、数字或 null；只有对象才允许读取下面的字段。
+    return data if isinstance(data, dict) else None
+
+
 def extract_code_from_response(raw: str):
     """
-    write模式
-
-    从 AI 返回的原始文本中提取 explanation 和 code。
-    返回: (explanation_str, code_str)
+    write 模式：提取 explanation 和完整代码。
+    返回：(explanation_str, code_str)，格式不合规时返回两个空字符串。
     """
-    # 第一层：假设ai回答严格按照格式，尝试用json.loads解析
-    try:
-        data = json.loads(raw)      #把一个符合JSON语法的字符串，转换成Python的数据结构
-        return data.get("explanation", ""), data.get("code", "")
-        #分别取explanation与code，取不到则设置为空
+    data = parse_json_object(raw)
+    if data is None:
+        return "", ""
 
-    except json.JSONDecodeError:        #解析失败则开始降级
-        pass
+    explanation = data.get("explanation", "")
+    code = data.get("code")
+    if not isinstance(explanation, str) or not isinstance(code, str) or not code.strip():
+        return "", ""
 
-    # 第二层：Markdown 代码块提取安全边界
-    match = re.search(r"```(?:cpp|c\+\+|c)?\s*\n?(.*?)```", raw, re.DOTALL)
-    if match:
-        return "", match.group(1).strip()
+    # 只用 strip() 判断是否为空，返回时保留完整代码的缩进和末尾换行状态。
+    # 不再把任意回复或解释文字当作 C++ 源码交给编译器。
+    return explanation, code
 
-    # 第三层：放弃解析，原样返回，让编译器编译后将报错信息返回给ai
-    return "", raw.strip()
 
 def extract_changes(raw: str):
     """
-    edit模式
-
-    从 AI 返回的原始文本中提取 explanation 和 changes 数组。
-    返回: (explanation_str, changes_list 或 None)
+    edit 模式：提取 explanation 和 changes 数组。
+    返回：(explanation_str, changes_list 或 None)。
     """
-    # 第一层：标准 JSON 解析
-    try:
-        data = json.loads(raw)
-        explanation = data.get("explanation", "")
-        changes = data.get("changes", None)
-        return explanation, changes
+    data = parse_json_object(raw)
+    if data is None:
+        return "", None
 
-    except json.JSONDecodeError:
-        pass
+    explanation = data.get("explanation", "")
+    changes = data.get("changes")
+    if not isinstance(explanation, str) or not isinstance(changes, list):
+        return "", None
 
-    # 第二层：Markdown 代码块提取
-    match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
-    if match:
-        try:
-            data = json.loads(match.group(1).strip())
-            explanation = data.get("explanation", "")
-            changes = data.get("changes", None)
-            return explanation, changes
-        except json.JSONDecodeError:
-            pass
-
-    # 第三层：解析失败，返回 None
-    return "", None
+    # 空列表合法，表示无需修改；每项的类型、单行要求和目标位置由 editor 校验。
+    return explanation, changes
 
 
 def extract_logic_report(raw: str):
@@ -74,21 +77,8 @@ def extract_logic_report(raw: str):
     从 AI 原本就会返回的 JSON 中读取逻辑分析，不额外调用一次 AI。
     返回字典中的文字只代表 AI 的推测，不能当作编译器或运行结果。
     """
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        # 与原项目的解析方式一致：允许 AI 偶尔把 JSON 包在 Markdown 代码块里。
-        match = re.search(r"```(?:json)?\s*\n?(.*?)```", raw, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group(1).strip())
-            except json.JSONDecodeError:
-                data = {}
-        else:
-            data = {}
-
-    # JSON 也可能是数组等类型；只有对象才有下面的分析字段。
-    if not isinstance(data, dict):
+    data = parse_json_object(raw)
+    if data is None:
         data = {}
 
     report = {}
@@ -97,6 +87,15 @@ def extract_logic_report(raw: str):
         # 缺失时显示“未提供”，避免程序替 AI 编造分析结论。
         report[field] = value.strip() if isinstance(value, str) and value.strip() else "未提供"
     return report
+
+
+def add_line_numbers(code: str) -> str:
+    """给发送给 AI 的源码添加展示用行号，不修改实际源码。"""
+    # 中间的空行也占一个行号，从 1 开始编号，与 editor 的定位规则保持一致。
+    return "\n".join(
+        f"{line_number}: {line}"
+        for line_number, line in enumerate(code.splitlines(), start=1)
+    )
 
 
 def print_logic_report(report: dict, validation: dict):
@@ -179,6 +178,9 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
                 current_mode = "edit"
 
         if current_mode == "edit":
+            # 每轮按当前源码重新编号，只修改发给 AI 的展示文本，不修改实际源码。
+            # 原始源码用于判断原意；changes 的行号只对应下方的当前源码。
+            numbered_code = add_line_numbers(current_code)
             prompt = f"""
             你是一个 C++ 调试专家。请根据源码和真实日志，先推测原意、定位问题，
             再提出最小修改，并在同一次回复中检查修改是否符合你推测的原意。
@@ -186,8 +188,8 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
             【编译、运行及修复记录】
             {history_text}
 
-            {original_context}【当前源码】
-            {current_code}
+            {original_context}【当前源码（带展示用行号）】
+            {numbered_code}
 
             请按需修复确有依据的问题，并按以下 JSON 格式输出：
             {{
@@ -197,7 +199,7 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
                 "remaining_risks": "说明哪些逻辑无法仅凭源码和本次运行确认",
                 "changes": [
                     {{
-                        "line": 目标行号（从 1 开始计数）,
+                        "line": 当前源码左侧展示的目标行号（从 1 开始计数）,
                         "original": "需要被替换的原始代码片段",
                         "replacement": "替换后的新代码片段"
                     }}
@@ -208,7 +210,11 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
             1. 只输出 JSON，不要包含其他任何文字。
             2. changes 数组中每一项代表一处修改。
                如果没有足够依据确认存在问题，返回空数组，不要为了修改而修改。
-            3. original 字段必须从源码中精确复制那一行的内容（不含行号和行首缩进也可以，但内容必须准确）。
+            3. 当前源码每行前面的“数字: ”仅是展示用行号，不属于源码。
+               line 必须使用当前源码左侧的编号，不要使用原始源码或日志中的行号。
+               original 必须复制对应行的代码内容，不包含展示用的“数字: ”前缀。
+               replacement 也不能包含展示用行号，并应保留该行原有缩进。
+               同一内容出现多次时，必须准确指定要修改的那一行，不要估算行号。
             4. 只支持单行修改。original 和 replacement 都不能包含换行符。
             5. 不要使用 Markdown 代码块包裹 JSON。
             6. 只修改有问题的代码行，不要改动其他任何行。原始代码中的注释、空行、缩进必须原样保留。
@@ -289,15 +295,15 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
 
                 if changes is None:
                     if repair_mode == "edit":
-                        print("edit 模式解析失败。")
+                        print("edit 模式回复解析或结构校验失败。")
                         return
-                    print("edit 模式解析失败，使用 write 模式...")
-                    error_history.append("edit 模式解析失败，现在请改用完整代码模式输出。")
+                    print("edit 模式回复解析或结构校验失败，使用 write 模式...")
+                    error_history.append("edit 模式回复解析或结构校验失败，现在请改用完整代码模式输出。")
                     current_mode = "write"
                     continue
 
                 # 允许 AI 审查后明确表示无需修改，返回空changes
-                # 原版 editor.py 把空 changes 当成匹配失败；此处先拦截，避免误降级。
+                # 在生成候选代码前直接展示本次检查结果，避免把无需修改当成修复成功。
                 if changes == []:
                     print_logic_report(report, last_result)
                     if last_result["ok"]:
@@ -309,13 +315,14 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
                 # 应用 changes 到当前代码，得到修复后的完整代码
                 fixed_code = apply_changes(current_code, changes)
 
-                # 匹配失败时（暂未实现降级，先触发异常）
+                # 字段、单行要求或定位校验失败时，不应用整批局部修改。
+                # 强制 edit 模式终止；自动模式沿用原来的 write 降级流程。
                 if fixed_code is None:
                     if repair_mode == "edit":
-                        print("edit 模式匹配失败。")
+                        print("edit 模式修改内容校验失败，或无法明确定位目标。")
                         return
-                    print("edit 模式匹配失败，使用 write 模式...")
-                    error_history.append("edit 模式匹配失败，现在请改用完整代码模式输出。")
+                    print("edit 模式修改内容校验失败，或无法明确定位目标，使用 write 模式...")
+                    error_history.append("edit 模式的字段类型、单行内容或目标定位未通过校验，现在请改用完整代码模式输出。")
                     current_mode = "write"
                     continue
 
@@ -336,7 +343,7 @@ def fix_file(file_path: str, apply_mode: str = None, repair_mode: str = "auto"):
                     error_history.append(f"AI诊断：{explanation}")
 
                 if not fixed_code:
-                    raise ValueError("write 模式提取后的代码为空")
+                    raise ValueError("write 模式回复格式不合规，或完整代码为空")
 
                 if fixed_code == current_code:
                     print_logic_report(report, last_result)
