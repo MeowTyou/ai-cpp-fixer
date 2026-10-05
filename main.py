@@ -10,7 +10,7 @@ if "/mnt/c/" in os.getcwd():
     print("错误：请将项目移至 WSL 内部路径（如 /home/用户名/），不要放在 /mnt/c/ 下。")
     sys.exit(1)
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="AI驱动的C++运行时错误自动修复工具",        #在终端输入 python main.py --help 时，显示在信息顶部
         epilog="示例: python main.py test.cpp --apply"        #显示在信息底部
@@ -54,8 +54,10 @@ def main():
     else:
         repair_mode = "auto"    #默认：edit优先，失败则使用write
     
-    # 调用修复引擎，传入模式参数
-    fix_file(args.file, apply_mode=apply_mode, repair_mode=repair_mode)
+    # 调用修复引擎，传入模式参数。
+    # 将流程状态返回给入口，避免丢弃失败结果后仍以退出码 0 结束。
+    return fix_file(args.file, apply_mode=apply_mode, repair_mode=repair_mode)
 
 if __name__ == "__main__":
-    main()
+    # 将 main() 的返回值作为操作系统看到的退出码：正常完成为 0，失败为 1。
+    sys.exit(main())

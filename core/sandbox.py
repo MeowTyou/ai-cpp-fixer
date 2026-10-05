@@ -37,16 +37,22 @@ def compile_and_run(source_code: str, timeout_sec: int = 2):
             return {
                 "ok": False,
                 "log": f"编译超时：超过 {COMPILE_TIMEOUT_SEC} 秒",
+                # 编译未完成，程序尚未运行，没有程序的实际输出。
+                "stdout": "",
+                "stderr": "",
             }
 
         if comp.returncode != 0:
-            return {"ok": False, "log": comp.stderr}
+            # 所有分支都返回输出字段；编译失败时 stdout 为空，stderr 保留诊断。
+            return {"ok": False, "log": comp.stderr, "stdout": "", "stderr": comp.stderr}
 
         if "-Warray-bounds" in comp.stderr or "array subscript" in comp.stderr:     #如果检测到编译器警告和错误
             return {
                 "ok": False,
                 "log": comp.stderr,
-                "warning_type": "compiler_warning"
+                "warning_type": "compiler_warning",
+                "stdout": "",
+                "stderr": comp.stderr,
             }
 
         try:
@@ -59,10 +65,27 @@ def compile_and_run(source_code: str, timeout_sec: int = 2):
                 timeout=timeout_sec,
             )
 
-            if run.returncode != 0:
-                return {"ok": False, "log": run.stderr}
+            # ok 只表示本次编译、运行通过，不代表功能正确。
+            # 返回真实输出，供 fixer 比较修改前后的行为，并传给现有 AI 请求。
+            return {
+                "ok": run.returncode == 0,
+                "log": run.stderr if run.returncode != 0 else "",
+                "stdout": run.stdout,
+                "stderr": run.stderr,
+            }
 
-            return {"ok": True, "log": ""}
-
-        except subprocess.TimeoutExpired:
-            return {"ok": False, "log": f"Timeout: 程序运行超过{timeout_sec}秒"}
+        except subprocess.TimeoutExpired as e:
+            # 超时时可能已经产生部分输出，保留它，但不能把它当成完整运行结果。
+            # TimeoutExpired 中的输出可能是 bytes，即使 subprocess 使用了 text=True。
+            stdout = e.stdout or ""
+            stderr = e.stderr or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            return {
+                "ok": False,
+                "log": f"Timeout: 程序运行超过{timeout_sec}秒",
+                "stdout": stdout,
+                "stderr": stderr,
+            }
