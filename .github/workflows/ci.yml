@@ -1,0 +1,45 @@
+name: CI
+
+# 推送代码、提交或更新 PR 时自动检查；也允许在 Actions 页面手动运行。
+"on":
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# 测试只需要读取仓库内容。
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python 3.12 tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: 获取仓库代码
+        uses: actions/checkout@v7
+
+      - name: 配置 Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          # 缓存 pip 下载内容；requirements.txt 改变时更新缓存。
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: 安装系统工具
+        # g++ 是项目使用的编译器；patch 用于验证生成的补丁能够实际应用。
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes g++ patch
+
+      - name: 安装 Python 依赖
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip check
+
+      - name: 运行自动化测试
+        # 模型调用由测试替身提供，不需要配置 API 密钥。
+        # unittest 发现失败时返回非零退出码，GitHub 会将任务标记为失败。
+        run: python -m unittest discover -s tests -v
