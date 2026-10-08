@@ -1,10 +1,13 @@
 #include <iostream>
 
+void release(int* value) {
+    delete value;
+}
+
 int main() {
     int* value = new int(42);
     std::cout << *value << '\n';
-
-    delete value;
+    release(value);
     delete value;
     return 0;
 }

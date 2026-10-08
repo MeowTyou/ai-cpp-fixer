@@ -1,13 +1,11 @@
 #include <iostream>
 
 int main() {
-    int numbers[4] = {1, 2, 3, 4};
+    int values[3] = {2, 4, 6};
     int sum = 0;
-
-    for (int i = 0; i < 4; ++i) {
-        sum += numbers[i];
+    for (int i = 0; i < 3; ++i) {
+        sum += values[i];
     }
-
     std::cout << sum << '\n';
     return 0;
 }
